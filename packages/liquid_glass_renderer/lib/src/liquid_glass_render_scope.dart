@@ -27,20 +27,6 @@ class LiquidGlassRenderScope extends InheritedWidget {
     return scope!;
   }
 
-  /// Returns the nearest [LiquidGlassRenderScope] from the widget tree,
-  /// or `null` if there is none.
-  static LiquidGlassRenderScope? maybeOf(
-    BuildContext context, {
-    bool watch = true,
-  }) {
-    if (watch) {
-      return context
-          .dependOnInheritedWidgetOfExactType<LiquidGlassRenderScope>();
-    } else {
-      return context.getInheritedWidgetOfExactType<LiquidGlassRenderScope>();
-    }
-  }
-
   @override
   bool updateShouldNotify(covariant InheritedWidget oldWidget) {
     return oldWidget is! LiquidGlassRenderScope ||

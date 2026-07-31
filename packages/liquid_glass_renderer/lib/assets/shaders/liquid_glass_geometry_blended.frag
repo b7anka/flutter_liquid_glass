@@ -8,13 +8,18 @@
 precision mediump float;
 
 #include <flutter/runtime_effect.glsl>
+
+// Declare uShapeData BEFORE including sdf.glsl so SHAPE_DATA macro can resolve it.
+// MAX_SHAPES=16, 6 floats per shape = 96 total (hardcoded to avoid forward-declaration issue).
+layout(location = 2) uniform float uNumShapes;
+layout(location = 3) uniform float uShapeData[96];
+
+#define SHAPE_DATA uShapeData
 #include "sdf.glsl"
 #include "displacement_encoding.glsl"
 
 layout(location = 0) uniform vec2 uSize;
 layout(location = 1) uniform vec4 uOpticalProps;
-layout(location = 2) uniform float uNumShapes;
-layout(location = 3) uniform float uShapeData[MAX_SHAPES * 6];
 
 float uThickness = uOpticalProps.z;
 float uRefractiveIndex = uOpticalProps.x;
@@ -31,17 +36,23 @@ void main() {
         vec2 screenUV = vec2(fragCoord.x / uSize.x, fragCoord.y / uSize.y);
     #endif
     
-    float sd = sceneSDF(fragCoord, int(uNumShapes), uShapeData, uBlend);
-    
+    float sd = sceneSDF(fragCoord, int(uNumShapes), uBlend);
+
     float foregroundAlpha = 1.0 - smoothstep(-2.0, 0.0, sd);
     if (foregroundAlpha < 0.01) {
         fragColor = vec4(0.0);
         return;
     }
     
+    // dFdx/dFdy not available in SkSL runtime effects (web); guarded by kIsWeb in Dart.
+#if defined(IMPELLER_TARGET_METAL) || defined(IMPELLER_TARGET_OPENGLES) || defined(IMPELLER_TARGET_VULKAN)
     float dx = dFdx(sd);
     float dy = dFdy(sd);
-    
+#else
+    float dx = 0.0;
+    float dy = 0.0;
+#endif
+
     float n_cos = max(uThickness + sd, 0.0) / uThickness;
     float n_sin = sqrt(max(0.0, 1.0 - n_cos * n_cos));
     

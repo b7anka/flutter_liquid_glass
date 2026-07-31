@@ -1,6 +1,8 @@
 // Shape array uniforms - 6 floats per shape (type, centerX, centerY, sizeW, sizeH, cornerRadius)
 // Reduced from 64 to 16 shapes to fit Impeller's uniform buffer limit (16 * 6 = 96 floats vs 384)
+#ifndef MAX_SHAPES
 #define MAX_SHAPES 16
+#endif
 
 float sdfRRect( in vec2 p, in vec2 b, in float r ) {
     float shortest = min(b.x, b.y);
@@ -60,57 +62,59 @@ float getShapeSDF(float type, vec2 p, vec2 center, vec2 size, float r) {
     return 1e9; // none
 }
 
-float getShapeSDFFromArray(int index, vec2 p, float shapeData[MAX_SHAPES * 6]) {
-    int baseIndex = index * 6;
-    float type = shapeData[baseIndex];
-    vec2 center = vec2(shapeData[baseIndex + 1], shapeData[baseIndex + 2]);
-    vec2 size = vec2(shapeData[baseIndex + 3], shapeData[baseIndex + 4]);
-    float cornerRadius = shapeData[baseIndex + 5];
-    
-    return getShapeSDF(type, p, center, size, cornerRadius);
-}
+// NOTE: SHAPE_DATA must be defined by the including shader before including this file.
+// Example: #define SHAPE_DATA uShapeData
+// This avoids passing the array as a function parameter, which is incompatible with SkSL.
+// Using a macro ensures indices are compile-time constants (required by SkSL).
+#define _SDF_AT(i, pt) getShapeSDF( \
+    SHAPE_DATA[(i)*6], (pt), \
+    vec2(SHAPE_DATA[(i)*6+1], SHAPE_DATA[(i)*6+2]), \
+    vec2(SHAPE_DATA[(i)*6+3], SHAPE_DATA[(i)*6+4]), \
+    SHAPE_DATA[(i)*6+5])
 
-float sceneSDF(vec2 p, int numShapes, float shapeData[MAX_SHAPES * 6], float blend) {
+float sceneSDF(vec2 p, int numShapes, float blend) {
     if (numShapes == 0) {
         return 1e9;
     }
     
-    float result = getShapeSDFFromArray(0, p, shapeData);
-    
-    // Optimized: unroll for common cases (1-4 shapes), use loop for 5+ shapes
-    if (numShapes <= 4) {
-        // Fully unrolled for 1-4 shapes (covers 90%+ of use cases)
-        if (numShapes >= 2) {
-            float shapeSDF = getShapeSDFFromArray(1, p, shapeData);
-            result = smoothUnion(result, shapeSDF, blend);
-        }
-        if (numShapes >= 3) {
-            float shapeSDF = getShapeSDFFromArray(2, p, shapeData);
-            result = smoothUnion(result, shapeSDF, blend);
-        }
-        if (numShapes >= 4) {
-            float shapeSDF = getShapeSDFFromArray(3, p, shapeData);
-            result = smoothUnion(result, shapeSDF, blend);
-        }
-    } else {
-        // Dynamic loop for 5+ shapes (uncommon cases)
-        for (int i = 1; i < min(numShapes, MAX_SHAPES); i++) {
-            float shapeSDF = getShapeSDFFromArray(i, p, shapeData);
-            result = smoothUnion(result, shapeSDF, blend);
-        }
-    }
-    
+    float result = _SDF_AT(0, p);
+
+    // Fully unrolled for all 16 shapes.
+    // Both the loop-bound and all array indices are constant expressions – required by SkSL.
+    if (numShapes >= 2)  { result = smoothUnion(result, _SDF_AT(1,  p), blend); }
+    if (numShapes >= 3)  { result = smoothUnion(result, _SDF_AT(2,  p), blend); }
+    if (numShapes >= 4)  { result = smoothUnion(result, _SDF_AT(3,  p), blend); }
+    if (numShapes >= 5)  { result = smoothUnion(result, _SDF_AT(4,  p), blend); }
+    if (numShapes >= 6)  { result = smoothUnion(result, _SDF_AT(5,  p), blend); }
+    if (numShapes >= 7)  { result = smoothUnion(result, _SDF_AT(6,  p), blend); }
+    if (numShapes >= 8)  { result = smoothUnion(result, _SDF_AT(7,  p), blend); }
+    if (numShapes >= 9)  { result = smoothUnion(result, _SDF_AT(8,  p), blend); }
+    if (numShapes >= 10) { result = smoothUnion(result, _SDF_AT(9,  p), blend); }
+    if (numShapes >= 11) { result = smoothUnion(result, _SDF_AT(10, p), blend); }
+    if (numShapes >= 12) { result = smoothUnion(result, _SDF_AT(11, p), blend); }
+    if (numShapes >= 13) { result = smoothUnion(result, _SDF_AT(12, p), blend); }
+    if (numShapes >= 14) { result = smoothUnion(result, _SDF_AT(13, p), blend); }
+    if (numShapes >= 15) { result = smoothUnion(result, _SDF_AT(14, p), blend); }
+    if (numShapes >= 16) { result = smoothUnion(result, _SDF_AT(15, p), blend); }
+
     return result;
 }
 
 // Calculate 3D normal using derivatives (shader-specific normal calculation)
+// dFdx/dFdy are not available in SkSL runtime effects (web). On non-native targets we
+// return a flat up-normal so the shader still compiles; at runtime the kIsWeb guard in
+// Dart prevents this code path from being reached on web.
 vec3 getNormal(float sd, float thickness) {
+#if defined(IMPELLER_TARGET_METAL) || defined(IMPELLER_TARGET_OPENGLES) || defined(IMPELLER_TARGET_VULKAN)
     float dx = dFdx(sd);
     float dy = dFdy(sd);
-    
-    // The cosine and sine between normal and the xy plane
     float n_cos = max(thickness + sd, 0.0) / thickness;
     float n_sin = sqrt(max(0.0, 1.0 - n_cos * n_cos));
-    
     return normalize(vec3(dx * n_cos, dy * n_cos, n_sin));
+#else
+    // SkSL web fallback – never executed thanks to kIsWeb Dart guard.
+    float n_cos = max(thickness + sd, 0.0) / thickness;
+    float n_sin = sqrt(max(0.0, 1.0 - n_cos * n_cos));
+    return normalize(vec3(0.0, 0.0, 1.0));
+#endif
 }

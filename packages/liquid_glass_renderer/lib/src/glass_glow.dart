@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:liquid_glass_renderer/src/internal/glass_drag_builder.dart';
 import 'package:meta/meta.dart';
 import 'package:motor/motor.dart';
 
@@ -15,7 +14,6 @@ class GlassGlow extends StatelessWidget {
     this.glowColor = Colors.white24,
     this.glowRadius = 1,
     this.hitTestBehavior = HitTestBehavior.opaque,
-    this.gestureMode = GestureMode.listener,
     super.key,
   });
 
@@ -38,47 +36,26 @@ class GlassGlow extends StatelessWidget {
   /// Defaults to [HitTestBehavior.opaque].
   final HitTestBehavior hitTestBehavior;
 
-  /// {@macro gesture_mode}
-  ///
-  /// Defaults to [GestureMode.listener].
-  final GestureMode gestureMode;
-
   /// The child that will be painted above the glow effect.
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    switch (gestureMode) {
-      case GestureMode.listener:
-        return Listener(
-          behavior: hitTestBehavior,
-          onPointerDown: (event) =>
-              _handlePointer(context, event.localPosition),
-          onPointerMove: (event) =>
-              _handlePointer(context, event.localPosition),
-          onPointerUp: (event) => _removeTouch(context),
-          onPointerCancel: (event) => _removeTouch(context),
-          child: child,
-        );
-      case GestureMode.gestureDetector:
-        return GestureDetector(
-          behavior: hitTestBehavior,
-          onPanStart: (details) =>
-              _handlePointer(context, details.localPosition),
-          onPanUpdate: (details) =>
-              _handlePointer(context, details.localPosition),
-          onPanEnd: (details) => _removeTouch(context),
-          onPanCancel: () => _removeTouch(context),
-          child: child,
-        );
-    }
+    return Listener(
+      behavior: hitTestBehavior,
+      onPointerDown: (event) => _handlePointer(context, event),
+      onPointerMove: (event) => _handlePointer(context, event),
+      onPointerUp: (event) => _removeTouch(context),
+      onPointerCancel: (event) => _removeTouch(context),
+      child: child,
+    );
   }
 
-  void _handlePointer(BuildContext context, Offset position) {
+  void _handlePointer(BuildContext context, PointerEvent event) {
     final layerState = GlassGlowLayer.maybeOf(context);
 
     layerState?.updateTouch(
-      position,
+      event.localPosition,
       radius: glowRadius,
       color: glowColor,
     );
